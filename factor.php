@@ -40,10 +40,9 @@ $newToken = function_exists('newToken') ? newToken() : $_SESSION['newtoken'];
  * @var Translate $langs
  * @var User $user
  * @var DoliDB $db
+ * @var HookManager $hookmanager
  * @var stdClass $conf
  */
-
-global $user;
 
 $langs->load("bills");
 $langs->load("factor@factor");
@@ -52,6 +51,10 @@ $id = (GETPOST('facid','int') ? GETPOST('facid','int') : GETPOST('id','int'));
 $action = GETPOST('action','alpha');
 $export_txt = GETPOST('export_txt', 'alpha');
 if (!empty($export_txt)) $action = 'export';
+
+$object = new TFactor($db);
+$hookmanager->initHooks(array('factorlist'));
+$extrafields = new ExtraFields($db);
 
 $option = GETPOST('option', 'none');
 $builddoc_generatebutton=GETPOST('builddoc_generatebutton', 'none');
@@ -189,7 +192,7 @@ if ($action == 'export')
 	$format = GETPOST('format', 'alpha');
 	$TRefFacture = GETPOST('toGenerate', 'array');
 
-	_export_factures($db, $format, $TRefFacture);
+	export_factures($db, $format, $TRefFacture);
 }
 
 /*
@@ -511,9 +514,10 @@ if ($resql)
 
 	if(empty($factor_depot)) {
 		print "<div class='tabsAction'>";
-		print "<select name='format'><option value='natixis'>Natixis</option>";
-		print "<option value='tif_excel'>TIF (Excel)</option>";
-		print "</select>&nbsp;";
+		print "<select name='format'>";
+        print "<option value='natixis'>Natixis</option>";
+        print "<option value='tif_excel'>TIF (Excel)</option>";
+        print "</select>&nbsp;";
 		print "<input class='button' type='submit' name='export_txt' value='".$langs->transnoentitiesnoconv('FileExport')."' />";
 		print '&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;';
 		print "<input class='button' type='submit' name='factor_depot_classify' value='".$langs->trans('ClassifyDepot')."' />";
