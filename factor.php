@@ -44,6 +44,8 @@ $newToken = function_exists('newToken') ? newToken() : $_SESSION['newtoken'];
  * @var stdClass $conf
  */
 
+global $user;
+
 $langs->load("bills");
 $langs->load("factor@factor");
 
@@ -98,6 +100,35 @@ if ($action == "builddoc" && $user->hasRight('facture', 'lire') && ! GETPOST('bu
 {
 	if (is_array($_POST['toGenerate']))
 	{
+	    // Fallback : génère le PDF des factures cochées qui n'en ont pas encore, sinon dol_dir_list
+	    // ne trouve rien à fusionner et la fusion échoue (NoPDFAvailableForChecked). Idempotent.
+	    foreach ($_POST['toGenerate'] as $tmppdf) {
+	        $refsan = dol_sanitizeFileName($tmppdf);
+	        $pdffile = $conf->facture->dir_output.'/'.$refsan.'/'.$refsan.'.pdf';
+	        if (dol_is_file($pdffile)) continue;
+
+	        $facturetogen = new Facture($db);
+	        if ($facturetogen->fetch(0, $tmppdf) <= 0) continue;
+	        $facturetogen->fetch_thirdparty();
+
+	        $modeltogen = !empty($facturetogen->model_pdf) ? $facturetogen->model_pdf : getDolGlobalString('FACTURE_ADDON_PDF');
+
+	        $outputlangs = $langs;
+	        if (getDolGlobalInt('MAIN_MULTILANGS') && !empty($facturetogen->thirdparty->default_lang)) {
+	            $outputlangs = new Translate('', $conf);
+	            $outputlangs->setDefaultLang($facturetogen->thirdparty->default_lang);
+	        }
+
+	        $hidedetails = getDolGlobalInt('MAIN_GENERATE_DOCUMENTS_HIDE_DETAILS');
+	        $hidedesc    = getDolGlobalInt('MAIN_GENERATE_DOCUMENTS_HIDE_DESC');
+	        $hideref     = getDolGlobalInt('MAIN_GENERATE_DOCUMENTS_HIDE_REF');
+
+	        if ($facturetogen->generateDocument($modeltogen, $outputlangs, $hidedetails, $hidedesc, $hideref) <= 0) {
+	            dol_syslog('factor PDF merge: échec génération PDF facture '.$tmppdf.' - '.$facturetogen->error, LOG_ERR);
+	            setEventMessages($facturetogen->error, $facturetogen->errors, 'errors');
+	        }
+	    }
+
 	    $arrayofinclusion=array();
 	    foreach($_POST['toGenerate'] as $tmppdf) $arrayofinclusion[]=preg_quote($tmppdf.'.pdf','/');
 		$factures = dol_dir_list($conf->facture->dir_output,'all',1,implode('|',$arrayofinclusion),'\.meta$|\.png','date',SORT_DESC);
@@ -136,17 +167,30 @@ if ($action == "builddoc" && $user->hasRight('facture', 'lire') && ! GETPOST('bu
         if (getDolGlobalString('MAIN_DISABLE_PDF_COMPRESSION')) $pdf->SetCompression(false);
 
 		// Add all others
+		$TCorruptedFiles = [];
+		$nbMergedPages = 0;
 		foreach($files as $file)
 		{
-			// Charge un document PDF depuis un fichier.
-			$pagecount = $pdf->setSourceFile($file);
-			for ($i = 1; $i <= $pagecount; $i++)
-			{
-				$tplidx = $pdf->importPage($i);
-				$s = $pdf->getTemplatesize($tplidx);
-				$pdf->AddPage($s['h'] > $s['w'] ? 'P' : 'L');
-				$pdf->useTemplate($tplidx);
+			try {
+				// Charge un document PDF depuis un fichier.
+				$pagecount = $pdf->setSourceFile($file);
+				for ($i = 1; $i <= $pagecount; $i++)
+				{
+					$tplidx = $pdf->importPage($i);
+					$s = $pdf->getTemplatesize($tplidx);
+					$pdf->AddPage($s['h'] > $s['w'] ? 'P' : 'L');
+					$pdf->useTemplate($tplidx);
+					$nbMergedPages++;
+				}
+			} catch (Throwable $e) {
+				// PDF corrompu / illisible : on l'ignore au lieu de laisser l'erreur brute TCPDF/FPDI planter sur une page blanche.
+				dol_syslog('factor PDF merge: fichier ignoré (corrompu ou illisible) '.$file.' - '.$e->getMessage(), LOG_WARNING);
+				$TCorruptedFiles[] = basename($file);
 			}
+		}
+		if (!empty($TCorruptedFiles)) {
+			dol_syslog('factor PDF merge: '.count($TCorruptedFiles).' PDF ignoré(s) (corrompu/illisible) : '.implode(', ', $TCorruptedFiles), LOG_WARNING);
+			setEventMessages($langs->trans('FactorErrorCorruptedPdfFiles', implode(', ', $TCorruptedFiles)), null, 'warnings');
 		}
 
 		// Create output dir if not exists
@@ -155,7 +199,7 @@ if ($action == "builddoc" && $user->hasRight('facture', 'lire') && ! GETPOST('bu
 		// Save merged file
 		$filename=strtolower(dol_sanitizeFileName($langs->transnoentities("Factor")));
 		if ($option=='late') $filename.='_'.strtolower(dol_sanitizeFileName($langs->transnoentities("Late")));
-		if ($pagecount)
+		if ($nbMergedPages)
 		{
 			$now=dol_now();
 			$file=$diroutputpdf.'/'.$filename.'_'.dol_print_date($now,'dayhourlog').'.pdf';
@@ -235,10 +279,10 @@ if ($TErrorModeReglt)
 <script type="text/javascript">
 $(document).ready(function() {
 	$("#checkall").click(function() {
-		$(".checkformerge").attr('checked', true);
+		$(".checkformerge").prop('checked', true);
 	});
 	$("#checknone").click(function() {
-		$(".checkformerge").attr('checked', false);
+		$(".checkformerge").prop('checked', false);
 	});
 });
 </script>
@@ -480,7 +524,9 @@ if ($resql)
 			print $facturestatic->LibStatut($objp->paye,$objp->fk_statut,5,$objp->am);
 			print '</td>';
 
-			// Checkbox
+			// Checkbox : sélection de la ligne pour Export Natixis / ClassifyDepot / fusion PDF.
+			// Doit être affichée pour TOUTE ligne, et non seulement quand un PDF est déjà généré,
+			// sinon les factures sans PDF ne sont pas sélectionnables pour l'export/la mise en dépôt.
 			print '<td align="center">';
 			if (! empty($formfile->infofiles['nboffiles']))
 				print '<input id="cb'.$objp->facid.'" class="flat checkformerge" type="checkbox" name="toGenerate[]" value="'.$objp->facnumber.'">';

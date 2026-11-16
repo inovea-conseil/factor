@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 ## Unreleased
 
 ## Release 1.6
+- FIX : COMPAT V24 - *30/06/2026* - 1.6.2
+- FIX : DA028299 - Invoice list selection checkboxes were hidden unless a generated PDF already existed - *09/06/2026* - 1.6.1
+  + "Select all/none" links not working (jQuery .attr -> .prop)
+  + Natixis export used deprecated Societe::code_compta (no longer populated by fetch) -> use code_compta_client, fixes false "missing accounting code" error and blank code in export file
+  + PDF merge: generate the invoice PDF on the fly when it is missing, instead of failing with "no PDF available"
+  + PDF merge: catch TCPDF/FPDI errors on corrupted/unreadable PDF (skip the file + warning) instead of a raw error on a blank page
+  + Guard define('INC_FROM_DOLIBARR') (hook beforePDFCreation + module init) to avoid "constant already defined" warning on multiple PDF generations
 - Inovea Conseil - Add TIF export and compatibility with listexportimportv2 - *18/04/2026* - 1.6.1
 - NEW : COMPAT V23 - *01/04/2026* - 1.6
 
