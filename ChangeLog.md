@@ -2,6 +2,7 @@
 All notable changes to this project will be documented in this file.
 
 ## Unreleased
+- Inovea Conseil - Add TIF export and compatibility with listexportimportv2 - *18/04/2026* - 1.6.2 avgp
 
 ## Release 1.6
 - FIX : COMPAT V24 - *30/06/2026* - 1.6.2
@@ -11,7 +12,6 @@ All notable changes to this project will be documented in this file.
   + PDF merge: generate the invoice PDF on the fly when it is missing, instead of failing with "no PDF available"
   + PDF merge: catch TCPDF/FPDI errors on corrupted/unreadable PDF (skip the file + warning) instead of a raw error on a blank page
   + Guard define('INC_FROM_DOLIBARR') (hook beforePDFCreation + module init) to avoid "constant already defined" warning on multiple PDF generations
-- Inovea Conseil - Add TIF export and compatibility with listexportimportv2 - *18/04/2026* - 1.6.1
 - NEW : COMPAT V23 - *01/04/2026* - 1.6
 
 ## Release 1.5
